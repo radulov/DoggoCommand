@@ -3,6 +3,39 @@ import pygame
 import serial
 import math
 import signal
+import pygame
+import time
+
+INACTIVITY_RECONNECT_TIME = 5
+RECONNECT_TIMEOUT = 1
+
+class ControllerInput():
+  def __init__(self):
+    pygame.joystick.init()
+    self.lastTime = 0
+    self.lastActive = 0
+
+  def getButtons(self, joystickId):
+    joystick = pygame.joystick.Joystick(joystickId)
+    joystick.init()
+
+    buttons = {}
+
+    for i in range(joystick.get_numbuttons()):
+      buttons[i] = joystick.get_button(i)
+      if buttons[i]:
+        self.lastActive = time.time()
+
+    return buttons
+
+  def hasController(self):
+    now = time.time()
+    if now - self.lastActive > INACTIVITY_RECONNECT_TIME and now - self.lastTime > RECONNECT_TIMEOUT:
+      self.lastTime = now
+      pygame.joystick.quit()
+      pygame.joystick.init()
+
+    return pygame.joystick.get_count() > 0
 
 # prevents quiting on pi when run through systemd
 def handler(signum, frame):
@@ -12,6 +45,8 @@ signal.signal(signal.SIGHUP, handler)
 # those two lines allow for running headless (hopefully)
 os.environ["SDL_VIDEODRIVER"] = "dummy"
 os.putenv('DISPLAY', ':0.0')
+
+controller = ControllerInput()
 
 pygame.display.init()
 pygame.joystick.init()
@@ -34,7 +69,7 @@ JoyAx = pygame.joystick.Joystick(0).get_numaxes()
 print("Number of axis:")
 print(JoyAx)
 
-doggo = serial.Serial('/dev/ttyACM0', 115200)
+doggo = serial.Serial('/dev/cu.usbserial-DN06A6P2', 115200)
 
 def deadband(x, deadband):
     if math.fabs(x) < deadband:
@@ -45,23 +80,26 @@ def deadband(x, deadband):
 def doggo_send(x):
     doggo.write(bytes(x+'\n',"utf-8"))
 
-while True:
+while controller.hasController():
+    controller.getButtons(0)
+    # JoyName = pygame.joystick.Joystick(0).get_name()
+    # print(JoyName)
     pygame.event.pump()
     pygame.event.pump()
 
     r_x = (pygame.joystick.Joystick(0).get_axis(2)) # right side-to-side
-    r_y = -(pygame.joystick.Joystick(0).get_axis(5)) # right up-down
+    r_y = -(pygame.joystick.Joystick(0).get_axis(3)) # right up-down
     
     l_x = (pygame.joystick.Joystick(0).get_axis(0)) # left side-to-side
     l_y  = -(pygame.joystick.Joystick(0).get_axis(1)) # left up-down
 
     L2 = pygame.joystick.Joystick(0).get_axis(3)
-    R2 = pygame.joystick.Joystick(0).get_axis(4)
+    R2 = pygame.joystick.Joystick(0).get_axis(2)
 
     on_right = (pygame.joystick.Joystick(0).get_button(5))
     on_left = (pygame.joystick.Joystick(0).get_button(4))
     l_trigger = (pygame.joystick.Joystick(0).get_axis(3))
-    r_trigger = (pygame.joystick.Joystick(0).get_axis(4))
+    r_trigger = (pygame.joystick.Joystick(0).get_axis(2))
 
     square = pygame.joystick.Joystick(0).get_button(0)
     x = pygame.joystick.Joystick(0).get_button(1)
@@ -74,20 +112,29 @@ while True:
     forward_back = deadband(l_y, 0.1)
     left_right = deadband(l_x, 0.1)
 
-    if forward_back == 0 and left_right == 0 and x == 0 and circle == 0:
-        print('S')
-        doggo_send('S')
-    elif forward_back != 0 or left_right != 0:
+    #if forward_back == 0 and left_right == 0 and x == 0 and circle == 0:
+        #print('S')
+        #doggo_send('S')
+    #el
+    if forward_back != 0 or left_right != 0:
         print('Y;l%.3f;s%.3f' % ((forward_back * 0.15), (left_right * 0.08)))
         doggo_send('Y;l%.3f;s%.3f' % ((forward_back * 0.15), (left_right * 0.08)))
     elif x == 1:
-        print('H')
-        doggo_send('H')
-    elif circle == 1:
-        print('E')
-        doggo_send('E')
-    else:
+        print('W')
+        doggo_send('W')
+    elif on_left == 1:
         print('S')
         doggo_send('S')
+    elif triangle == 1:
+        print('E')
+        doggo_send('E')
+    elif square == 1:
+        print('SQUARE')
+        doggo_send('l0.05')
+        doggo_send('u0.01')
+        doggo_send('f1')
+        doggo_send('d0.02')
+#l0.05 u0.01 f4 d0.02
 
     pygame.time.wait(100)
+doggo_send('S')
